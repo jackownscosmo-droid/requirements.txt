@@ -7,26 +7,36 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 from gtts import gTTS
 
-# --- 1. RENDER WEB SERVER (KEEPALIVE) ---
+# --- 1. RENDER WEB SERVER ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "KrishSlayin Userbot Status: ACTIVE"
+    return "KrishSlayin Userbot Status: ONLINE"
 
 def run_flask():
-    port = int(os.environ.get("PORT", 8080))
+    # Render default port 10000 or PORT env variable
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# --- 2. BOT CONFIGURATION ---
-API_ID = int(os.environ.get("API_ID", "0"))
+# --- 2. BOT CONFIGURATION & ENV CHECK ---
+API_ID_RAW = os.environ.get("API_ID", "")
 API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 
-bot = Client("krish_userbot", api_id=API_ID, api_hash=API_HASH, session_string=SESSION_STRING)
-PREFIX = "+"
+if not API_ID_RAW or not API_HASH or not SESSION_STRING:
+    print("❌ ERROR: Environment Variables (API_ID, API_HASH, SESSION_STRING) missing hain!")
 
-# Global Storage
+API_ID = int(API_ID_RAW) if API_ID_RAW.isdigit() else 0
+
+bot = Client(
+    "krish_userbot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    session_string=SESSION_STRING
+)
+
+PREFIX = "+"
 MUTED_USERS = set()
 
 # --- 3. COMMAND HANDLERS ---
@@ -63,22 +73,6 @@ async def clean_handler(client, message: Message):
             except Exception:
                 pass
 
-@bot.on_message(filters.me & filters.command("tts", prefixes=PREFIX))
-async def tts_handler(client, message: Message):
-    text = message.text.split(maxsplit=1)
-    if len(text) < 2 and not message.reply_to_message:
-        return await message.edit_text("❌ Type text or reply to a message!")
-    
-    target_text = text[1] if len(text) > 1 else message.reply_to_message.text
-    await message.edit_text("🎙️ Generating Voice Note...")
-    tts = gTTS(text=target_text, lang='hi')
-    filename = "tts.ogg"
-    tts.save(filename)
-    await message.delete()
-    await client.send_audio(message.chat.id, filename)
-    if os.path.exists(filename):
-        os.remove(filename)
-
 @bot.on_message(filters.me & filters.command("mute", prefixes=PREFIX))
 async def mute_handler(client, message: Message):
     if message.reply_to_message:
@@ -97,12 +91,6 @@ async def unmute_handler(client, message: Message):
     else:
         await message.edit_text("❌ Reply to a user to unmute.")
 
-@bot.on_message(filters.me & filters.command("leave", prefixes=PREFIX))
-async def leave_handler(client, message: Message):
-    await message.edit_text("👋 Leaving Chat...")
-    await client.leave_chat(message.chat.id)
-
-# Auto-delete messages from Muted Users (Shadow Mute Logic)
 @bot.on_message(filters.incoming & ~filters.me, group=1)
 async def auto_delete_muted(client, message: Message):
     if message.from_user and message.from_user.id in MUTED_USERS:
@@ -113,5 +101,9 @@ async def auto_delete_muted(client, message: Message):
 
 # --- 4. START PROCESS ---
 if __name__ == "__main__":
-    Thread(target=run_flask).start()
-    bot.run()
+    Thread(target=run_flask, daemon=True).start()
+    print("🚀 Web server started on port...")
+    try:
+        bot.run()
+    except Exception as e:
+        print(f"❌ CRASH REASON: {e}")
